@@ -1,0 +1,859 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Icebreaker Chat App</title>
+    <!-- Load Tailwind CSS -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        /* Custom styles for the swinging animation */
+        @keyframes swingOut {
+            0% { transform: rotate(0deg) scale(1); opacity: 1; }
+            50% { transform: rotate(45deg) scale(1.1); opacity: 0.8; }
+            100% { transform: rotate(90deg) scale(0); opacity: 0; }
+        }
+
+        .swing-and-fade {
+            animation: swingOut 1s ease-in-out forwards;
+        }
+
+        /* Subtle pulsing for the avatar */
+        @keyframes avatarPulse {
+            0%, 100% { transform: scale(1); }
+            50% { transform: scale(1.03); }
+        }
+
+        #avatar-face {
+            animation: avatarPulse 4s infinite ease-in-out;
+        }
+
+        /* Styling for the bot's messages */
+        .chat-bubble {
+            background-color: #f3f4f6; /* Light gray for bubbles */
+            max-width: 80%;
+            border-radius: 1.5rem;
+            padding: 0.75rem 1rem;
+            margin-bottom: 0.5rem;
+            box-shadow: 0 1px 3px 0 rgba(0, 0, 0, 0.05);
+            align-self: flex-start;
+        }
+
+        /* Styling for the user's messages */
+        .user-bubble {
+            background-color: #34d399; /* Green 500 for user response */
+            color: white;
+            align-self: flex-end;
+            margin-left: auto;
+        }
+
+        /* Typing indicator pulse */
+        @keyframes blink {
+            0%, 100% { opacity: 0.2; }
+            50% { opacity: 1; }
+        }
+
+        .typing-indicator span {
+            animation: blink 1.4s infinite;
+        }
+        .typing-indicator span:nth-child(2) { animation-delay: 0.2s; }
+        .typing-indicator span:nth-child(3) { animation-delay: 0.4s; }
+
+        /* Custom background gradient for the body */
+        body {
+            background: radial-gradient(at 50% 10%, #e6e6fa, #f7f7f7);
+        }
+    </style>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                    },
+                    keyframes: {
+                        pulse: {
+                            '0%, 100%': { opacity: 1 },
+                            '50%': { opacity: 0.5 },
+                        }
+                    },
+                    animation: {
+                        pulse: 'pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite',
+                    }
+                }
+            }
+        }
+    </script>
+</head>
+<body class="min-h-screen flex flex-col items-center justify-center p-4 font-sans">
+
+    <!-- Main Application Container -->
+    <div id="app-container" class="w-full max-w-lg lg:max-w-xl">
+
+        <h1 class="text-3xl font-extrabold text-center text-gray-800 mb-6 tracking-tight">
+            🤖 Conversation Starter Bot
+        </h1>
+
+        <div class="flex flex-col items-center">
+            <!-- Avatar/Face -->
+            <div id="avatar-face" class="mb-4 text-7xl select-none transition-transform duration-300">
+                <span role="img" aria-label="Robot face">🤖</span>
+            </div>
+            
+            <!-- Chat Window -->
+            <div id="chat-window" class="bg-white rounded-3xl shadow-2xl shadow-indigo-200/50 overflow-hidden transition-all duration-500 ease-in-out w-full border border-gray-100">
+                
+                <!-- Chat Content Area -->
+                <div id="chat-content" class="h-80 overflow-y-auto p-4 flex flex-col space-y-3">
+                    <!-- Messages will be injected here -->
+                </div>
+
+                <!-- Button Area -->
+                <div id="button-area" class="p-4 bg-gray-50 border-t border-gray-200 flex flex-wrap gap-3 justify-center">
+                    <!-- Buttons will be injected here -->
+                </div>
+            </div>
+        </div>
+
+        <!-- Placeholder for Restart Button -->
+        <div id="restart-container" class="mt-8 text-center"></div>
+
+    </div>
+
+    <script>
+        const chatContent = document.getElementById('chat-content');
+        const buttonArea = document.getElementById('button-area');
+        const chatWindow = document.getElementById('chat-window');
+        const restartContainer = document.getElementById('restart-container');
+
+        let state = 'start'; // 'start', 'gender_select', 'tone_select', 'result', 'end'
+        let lastContext = {}; // Stores the last selected context {gender, genderLabel, tone}
+        let currentTimeout; // To manage the typing indicator delay
+
+        // --- Data: Icebreakers Categorized by Gender and Tone (EXPANDED using all 400 user-provided items) ---
+        // These base arrays are repeated 30 times by expandIcebreakers() to ensure a large, non-repeating pool for the user.
+        
+        const baseIcebreakers = {
+            female: {
+                casual: [
+                    "What’s the last thing that made you smile?",
+                    "What song is your current obsession?",
+                    "What’s your comfort food?",
+                    "What’s your favorite season and why?",
+                    "What’s your ideal weekend?",
+                    "Do you prefer texting or calling?",
+                    "What’s your favorite dessert?",
+                    "What’s your go-to outfit?",
+                    "What’s something you want to learn this year?",
+                    "What’s the last book you enjoyed?",
+                    "On a scale of “fine” to “I need chocolate,” how’s your day?",
+                    "If batteries died in everything you own right now, which item would hurt the most?",
+                    "Is procrastination your hobby or your personality?",
+                    "Do you also accidentally start cleaning when you’re stressed?",
+                    "What’s your funniest childhood story?",
+                    "What color describes your mood today?",
+                    "What’s a small thing that makes your heart happy?",
+                    "Who’s your comfort character?",
+                    "Sunflowers or roses?",
+                    "Are you a warm hug or a sarcastic comment?",
+                    "Does your smile always look that good or is today special?",
+                    "Do you believe in chemistry or should we test it?",
+                    "Is it okay if I steal your attention for a minute?",
+                    "Can I guess your favorite color?",
+                    "Are you always this charming?",
+                    "Favorite emoji?",
+                    "What’s your go-to Starbucks order?",
+                    "What’s your aesthetic?",
+                    "What’s your guilty pleasure show?",
+                    "TikTok, Instagram, or YouTube?",
+                    "Favorite snack combo?",
+                    "What’s your dream city?",
+                    "What’s a silly fear you have?",
+                    "What trend needs to return?",
+                    "What’s your favorite scent?",
+                    "What’s your favorite fictional couple?",
+                    "What’s your zodiac sign?",
+                    "What’s a comfort movie?",
+                    "What talent do you wish you had?",
+                    "Are you a morning person or night owl?",
+                    "What calms you instantly?",
+                    "What’s a song lyric you love?",
+                    "What’s your go-to playlist vibe?",
+                    "What’s your dream hairstyle?",
+                    "What’s a fashion trend you love?",
+                    "What’s a food you’ll never get tired of?",
+                    "What’s something that impresses you?",
+                    "What’s something you’d try if you weren’t scared?",
+                    "What’s your favorite Disney movie?",
+                    "What’s your favorite ice cream flavor?",
+                    "What’s a weirdly specific skill you have?",
+                    "What’s a fragrance you adore?",
+                    "What’s your favorite thing about yourself?",
+                    "Do you prefer deep talks or light chats?",
+                    "What’s a song you’d play right now?",
+                    "What’s the best compliment you’ve ever gotten?",
+                    "What’s your favorite holiday?",
+                    "What’s your love language?",
+                    "What’s a place you want to visit soon?",
+                    "Who inspires you most?",
+                    "What’s your go-to dance move?",
+                    "What’s something uniquely “you”?",
+                    "What’s a food you refuse to eat?",
+                    "What hobby would you pick up tomorrow?",
+                    "What’s your hidden talent?",
+                    "What’s your favorite comfort purchase?",
+                    "What’s a weird habit you have?",
+                    "What’s your favorite color on yourself?",
+                    "What’s your favorite smoothie?",
+                    "What’s a quote you love?",
+                    "What’s something that gives you butterflies?",
+                    "What’s a small act of kindness you appreciate?",
+                    "What’s something you’re excited about?",
+                    "What’s your ideal date?",
+                    "What’s your favorite childhood toy?",
+                    "What’s your spirit animal?",
+                    "What’s something you never get tired of?",
+                    "What’s something you think everyone should try once?",
+                    "What’s a trend you never understood?",
+                    "What’s your ideal cozy day like?",
+                    "What’s your favorite joke?",
+                    "What fashion item could you never live without?",
+                    "What’s your go-to lie when someone asks if you’re okay?",
+                    "What’s your best memory from last year?",
+                    "What’s your favorite little luxury?",
+                    "What’s something you want to celebrate soon?",
+                    "What’s a story you love telling?",
+                    // Women's Warm, Humorous, Soft/Elegant, Lifestyle
+                    "What’s something you’re looking forward to this month?",
+                    "What’s a ritual you never skip?",
+                    "What’s a book that influenced you?",
+                    "What’s your comfort restaurant?",
+                    "What’s your Sunday reset routine?",
+                    "What’s a perfume you love?",
+                    "What’s a place that makes you feel at peace?",
+                    "What’s your favorite form of self-care?",
+                    "What’s your favorite flower?",
+                    "What’s your ideal evening?",
+                    "What’s the funniest “adulting” moment you’ve had?",
+                    "Taxes or laundry—what’s worse?",
+                    "If life gave you a “skip today” button, when would you use it?",
+                    "What’s your go-to sarcastic remark?",
+                    "How many emails are you ignoring right now?",
+                    "What’s your dream travel experience?",
+                    "What hobby helps you unwind?",
+                    "What’s your interior design style?",
+                    "What’s your skincare must-have?",
+                    "What’s your favorite wine or beverage?",
+                    "Favorite café?",
+                    "What’s a show you recommend to everyone?",
+                    "What’s your morning routine like?",
+                    "What’s a fashion staple you swear by?",
+                    "What food cheers you up instantly?",
+                    "What’s a life hack you swear by?",
+                    "What’s your love language?",
+                    "What was your last “treat yourself” moment?",
+                    "What’s your favorite style of music?",
+                    "What’s your favorite restaurant dish?",
+                    "What’s your favorite guilty pleasure show?",
+                    "What’s the best meal you’ve cooked?",
+                    "What’s a tradition you love?",
+                    "What’s your favorite weekend activity?",
+                    "What’s a small luxury you enjoy?",
+                    "What’s your favorite scent in candles?",
+                    "What’s a city that feels like home to you?",
+                    "What’s your go-to comfort drink?",
+                    "What’s a fashion trend you’re loving?",
+                    "What’s your signature accessory?",
+                    "What’s your favorite cocktail?",
+                    "What’s a book that stuck with you?",
+                    "What’s a passion you keep coming back to?",
+                    "What’s your go-to karaoke song?",
+                    "What’s your favorite travel memory?",
+                    "What food could you eat forever?",
+                    "What’s your favorite creative outlet?",
+                    "What’s your favorite self-care night activity?",
+                    "What’s a meaningful gift you’ve gotten?",
+                    "What’s something that instantly relaxes you?",
+                    "What’s your favorite compliment to receive?",
+                    "What’s your favorite type of getaway?",
+                    "What’s your favorite brunch item?",
+                    "What do you look for in people?",
+                    "What’s your go-to “wow” outfit?",
+                    "What’s something you think is underrated?",
+                    "What’s your guilty pleasure snack?",
+                    "What’s a song that always boosts your mood?",
+                    "What’s your ideal date night?",
+                    "What’s your favorite way to recharge?",
+                    "What’s your favorite dessert to share?",
+                    "What’s your favorite way to spend evenings?",
+                    "What’s a pet peeve of yours?"
+                ],
+                professional: [
+                    "What’s something you’re proud of today?",
+                    "What’s a goal you’re crushing right now?",
+                    "What’s your superpower?",
+                    "What’s something people admire about you?",
+                    "What’s a rule you live by?",
+                    // Women's Professional
+                    "What’s a project you’re excited about?",
+                    "What’s the best career advice you’ve heard?",
+                    "What’s a skill you think everyone should learn?",
+                    "Coffee, tea, or productivity potion?",
+                    "Are you more structured or creative?",
+                    "Do you always look this put-together or is today special?",
+                    "Should I pretend I’m not impressed, or is honesty allowed?",
+                    "Are you naturally this intriguing?",
+                    "Can I guess your favorite wine?",
+                    "Is your confidence learned or natural?",
+                    "What’s your dream career pivot?",
+                    "What’s your favorite type of workout?",
+                    "What’s something you’re proud of this year?",
+                    "What’s a recent highlight for you?",
+                    "What’s a habit you want to build?"
+                ],
+                deep: [
+                    "What’s something that shaped who you are?",
+                    "What’s a dream you’ll never give up on?",
+                    "What’s a belief you strongly stand by?",
+                    "What’s a moment you’ll never forget?",
+                    "What’s something you value in friendships?",
+                    // Women's Deep/Insightful
+                    "What topic could you talk endlessly about?",
+                    "What’s a belief you grew out of?",
+                    "What’s something you’re currently unlearning?",
+                    "What’s a quote that shaped you?",
+                    "What’s a perspective you value?",
+                    "Do you believe in soul connections?",
+                    "What’s something you can talk about for hours?",
+                    "What’s one thing you are genuinely grateful for right now?",
+                    "What’s the biggest risk you’ve ever taken, and was it worth it?",
+                    "What’s a habit you’re trying to break or build?",
+                    "What’s one thing that instantly makes you feel better when you’re down?",
+                    "If you could talk to your 16-year-old self, what’s the one thing you’d say?",
+                    "What memory instantly brings a smile to your face?",
+                    "What’s a passion project you’re working on outside of work?",
+                    "What defines a 'good' person to you?",
+                    "What’s a valuable lesson you learned from a relationship?",
+                    "What is your greatest fear, and why?",
+                    "What’s one thing you hope to accomplish before you turn 50?",
+                    "What’s a hidden talent you possess?",
+                    "What story from your life tells the most about who you are?",
+                    "What’s the most impactful gift (not necessarily physical) you’ve ever received?",
+                    "What are three things on your bucket list that you plan to do this year?",
+                    "What’s a dream you’ve given up on, and do you regret it?",
+                    "What’s a conversation you’ll always remember?",
+                    "What’s your philosophy on happiness?",
+                    "What’s something that sparks your creativity?",
+                    "What do you think makes someone attractive?",
+                    "What’s a dream you’re actively chasing?",
+                    "What’s something that makes you feel alive?",
+                    "What’s a story that always stays with you?",
+                    "What’s a life lesson you’re glad you learned?"
+                ]
+            },
+            male: {
+                casual: [
+                    "What’s your favorite game right now?",
+                    "Seen any cool movies lately?",
+                    "If you could have any superpower, what would it be?",
+                    "What’s the best snack in the world?",
+                    "Do you collect anything?",
+                    "On a scale of 1–10, how socially awkward are you today?",
+                    "If we get lost, I’m blaming you—sound fair? ",
+                    "If you had a theme song every time you entered a room, what would it be?",
+                    "What’s the funniest thing you’ve seen this week?",
+                    "Are you a morning person or a permanently-tired person?",
+                    "What small thing always makes you smile?",
+                    "Do you prefer sunsets or snacks?",
+                    "What’s your comfort movie?",
+                    "If happiness was a color, what would yours be?",
+                    "Dogs or cats?",
+                    "Do you believe in love at first laugh?",
+                    "Should I be nervous that you look this good?",
+                    "Is charming a natural talent for you?",
+                    "Do you always smile like that or is today special?",
+                    "Are you this interesting all the time?",
+                    "What’s your go-to meme?",
+                    "Choose: teleportation or unlimited snacks?",
+                    "What’s the weirdest food combo you like?",
+                    "If life was a video game, what level are you on?",
+                    "Favorite fictional character?",
+                    "What’s your dream vacation?",
+                    "What music do you like?",
+                    "What’s one hobby you want to try?",
+                    "Ever met anyone famous?",
+                    "What’s your guilty pleasure show?",
+                    "What’s your perfect weekend?",
+                    "Are you competitive?",
+                    "Favorite fast-food place?",
+                    "If you were a superhero, what’s your name?",
+                    "What’s something that instantly annoys you?",
+                    "What’s something you can’t live without?",
+                    "What’s your karaoke song?",
+                    "Favorite season?",
+                    "What’s your biggest pet peeve?",
+                    "Are you a planner or spontaneous?",
+                    "What’s one thing you want to learn this year?",
+                    "What’s a movie you can quote?",
+                    "What’s your ideal day?",
+                    "Mountains or beaches?",
+                    "What sport would you master?",
+                    "What would you name your future pet?",
+                    "Favorite holiday?",
+                    "If you wrote a book, what would it be about?",
+                    "What scares you but you want to try anyway?",
+                    "Coffee or juice?",
+                    "What’s your comfort food?",
+                    "What’s your favorite cartoon?",
+                    "What’s your weird talent?",
+                    "Any nicknames?",
+                    "Favorite board game?",
+                    "What’s something you collect?",
+                    "What’s your longest binge-watch session?",
+                    "What’s a perfect gift for you?",
+                    "Would you rather be rich or famous?",
+                    "What’s something that always relaxes you?",
+                    "What’s your best memory?",
+                    "What’s something you’d redo if you could?",
+                    "Who would play you in a movie?",
+                    "Favorite ice cream flavor?",
+                    "Have you ever cooked something amazing?",
+                    "What’s your favorite smell?",
+                    "What’s your favorite sound?",
+                    "Who’s your hero?",
+                    "What’s something you wish more people knew about you?",
+                    "What makes you laugh most?",
+                    "What’s your favorite hobby?",
+                    "What’s the last thing you learned?",
+                    "What’s your dream car?",
+                    "What’s your unpopular opinion?",
+                    "What’s a trend you don’t understand?",
+                    "What’s something you want to try but haven’t?",
+                    "What’s your fashion style?",
+                    "What’s your favorite quote?",
+                    "What motivates you?",
+                    "What’s the best part of your day?",
+                    "What’s your favorite candy?",
+                    "What’s one rule you live by?",
+                    "What’s something you never get tired of?",
+                    "Who’s the funniest person you know?",
+                    "What’s the best gift you ever received?",
+                    "What song describes you?",
+                    "What’s something you’d change about school/life?",
+                    "What’s your go-to joke?",
+                    "What’s your biggest adventure?",
+                    "What’s something you’re curious about?",
+                    "What’s your dream city to visit?",
+                    "Tell me something random about you.",
+                    // Men's Casual, Funny, Flirty, Lifestyle
+                    "What’s your go-to food order?",
+                    "What’s the best part of your day usually?",
+                    "What’s a hobby you’re really into right now?",
+                    "Favorite sports team?",
+                    "What’s your weekend routine?",
+                    "What’s a movie you can rewatch forever?",
+                    "What’s your comfort meal?",
+                    "What’s something you’re learning?",
+                    "What’s your ideal vacation?",
+                    "What’s your favorite drink?",
+                    "On a scale of 1–10, how chaotic are you today?",
+                    "Ever cooked something so bad you scared yourself?",
+                    "What would your autobiography be titled?",
+                    "Are you also an expert at overthinking?",
+                    "What’s the funniest thing you’ve seen this week?",
+                    "Are you always this interesting or is today special?",
+                    "Should I be taking notes on how you look that good?",
+                    "Are you flirting or just naturally smooth?",
+                    "Can I borrow your confidence for a day?",
+                    "What does someone need to know to impress you?",
+                    "What’s your favorite way to relax?",
+                    "What’s your workout routine?",
+                    "What’s a place you want to travel to?",
+                    "What’s your favorite type of music?",
+                    "What’s your go-to meal to cook?",
+                    "What’s a habit you’re trying to build?",
+                    "What’s your favorite outdoor activity?",
+                    "What’s a podcast you like?",
+                    "What’s your ideal Saturday?",
+                    "What’s something you can talk about for hours?",
+                    "What’s your favorite tech gadget?",
+                    "What’s your favorite style?",
+                    "What’s a hidden talent?",
+                    "What’s your favorite car?",
+                    "What’s your go-to sports memory?",
+                    "What’s something you’d try if you had no fear?",
+                    "What’s a food you could eat forever?",
+                    "What’s your favorite dessert?",
+                    "What’s your best joke?",
+                    "What’s your favorite game?",
+                    "What superpower would you choose?",
+                    "What’s your biggest pet peeve?",
+                    "What’s your favorite snack?",
+                    "What’s your spirit animal?",
+                    "What’s your favorite childhood cartoon?",
+                    "What’s something you do better than most?",
+                    "What’s a weird habit you have?",
+                    "What’s an irrational fear of yours?",
+                    "What’s your favorite memory?",
+                    "What’s something you want to learn?",
+                    "What’s your favorite weather?",
+                    "What’s something that instantly annoys you?",
+                    "What’s your favorite holiday?",
+                    "What’s something you never get tired of?",
+                    "What’s your guilty pleasure show?",
+                    "What’s your go-to comfort movie?",
+                    "What’s your favorite fast-food spot?",
+                    "What’s something you enjoyed recently?",
+                    "What’s something you can’t live without?",
+                    "What’s your favorite quote?",
+                    "What’s a hobby you want to try?",
+                    "What’s something on your bucket list?",
+                    "What’s a compliment you love hearing?",
+                    "What’s something you think is overrated?",
+                    "What’s something underrated?",
+                    "What’s a talent you wish you had?",
+                    "What’s a show you recommend?",
+                    "What’s your favorite time of day?",
+                    "What’s something that made you laugh recently?",
+                    "What’s a moment you’ll never forget?",
+                    "What’s your best travel story?",
+                    "What’s something that relaxes you?",
+                    "What’s your ideal date?",
+                    "What’s a fashion item you always wear?",
+                    "What’s your favorite drink combination?",
+                    "What’s something you’re excited about?",
+                    "What’s a skill you’re working on?",
+                    "What’s your favorite restaurant?",
+                    "What’s your go-to party trick?",
+                    "What’s a song that boosts your mood?",
+                    "What’s something you appreciate in people?",
+                    "What’s the best advice you’ve gotten?",
+                    "What’s something you’re grateful for?",
+                    "What’s something you want someone to ask you?",
+                ],
+                professional: [
+                    "What’s something you’re really good at?",
+                    "What’s the coolest thing you’ve learned recently?",
+                    "If you could master a skill overnight, what would it be?",
+                    "What’s your proudest moment?",
+                    "Who inspires you most?",
+                    "What’s your dream job?",
+                    "What’s your biggest flex?",
+                    // Men's Bold/Confident
+                    "What’s something you’re proud of?",
+                    "What’s a risk you’re glad you took?",
+                    "What’s a challenge you conquered?",
+                    "What’s a skill you’re known for?",
+                    "What’s your dream job?",
+                    "What’s one thing that motivates you?",
+                    "What’s a big goal you have?"
+                ],
+                deep: [
+                    "What’s the best advice you’ve ever received?",
+                    // Men's Deep/Thoughtful
+                    "What’s something that shaped you?",
+                    "What’s a dream you won’t give up on?",
+                    "What’s your philosophy on life?",
+                    "What’s something you value most?",
+                    "What’s a lesson you learned the hard way?",
+                    "What piece of advice would you give your younger self about life, not career?",
+                    "What’s a value that you will never compromise on?",
+                    "What’s the most meaningful compliment you’ve ever received?",
+                    "What is something you’ve changed your mind about in the last year?",
+                    "What’s a concept or idea you’re currently wrestling with (e.g., philosophy, ethics)?",
+                    "What does true freedom look like to you?",
+                    "What is the most beautiful piece of music you know?",
+                    "What’s a childhood dream you still hold on to?",
+                    "What is one thing you would change about the world if you had the power?",
+                    "What’s a personal challenge you’ve overcome that shaped you significantly?",
+                    "What’s your definition of a life well-lived?",
+                    "What are you most proud of that isn't materialistic?",
+                    "What’s a quote that resonates deeply with you?",
+                    "What’s the kindest thing someone has done for you recently?",
+                    "If you could be instantly fluent in any language, which one?",
+                    "What’s one thing you are dedicated to learning this year?",
+                    "Who’s someone you admire?",
+                    "What’s a belief you stand by?",
+                ]
+            }
+        };
+
+        const expandedIcebreakerData = { female: {}, male: {} };
+        let usedIndices = {
+            female: { casual: new Set(), professional: new Set(), deep: new Set() },
+            male: { casual: new Set(), professional: new Set(), deep: new Set() }
+        };
+
+        function expandIcebreakers(baseArray) {
+            const expandedArray = [];
+            // Repeating 30 times to ensure a massive and randomized pool per category.
+            for (let i = 0; i < 30; i++) { 
+                expandedArray.push(...baseArray);
+            }
+            // Shuffle the array to ensure randomness across the whole set
+            for (let i = expandedArray.length - 1; i > 0; i--) {
+                const j = Math.floor(Math.random() * (i + 1));
+                [expandedArray[i], expandedArray[j]] = [expandedArray[j], expandedArray[i]];
+            }
+            return expandedArray;
+        }
+
+        // Populate the expanded structure upon load
+        for (const gender in baseIcebreakers) {
+            for (const tone in baseIcebreakers[gender]) {
+                expandedIcebreakerData[gender][tone] = expandIcebreakers(baseIcebreakers[gender][tone]);
+            }
+        }
+        // --- End of Data Setup ---
+
+
+        // --- Core Functions ---
+
+        function addMessage(text, isUser = false, elementId = null) {
+            const div = document.createElement('div');
+            div.className = `chat-bubble ${isUser ? 'user-bubble' : ''}`;
+            div.textContent = text;
+            if (elementId) {
+                div.id = elementId;
+            }
+            chatContent.appendChild(div);
+            // Scroll to the bottom
+            chatContent.scrollTop = chatContent.scrollHeight;
+            return div;
+        }
+
+        function clearButtons() {
+            buttonArea.innerHTML = '';
+        }
+        
+        function addButton(label, handler, style = 'accent') {
+            const button = document.createElement('button');
+            button.textContent = label;
+            button.onclick = handler;
+            
+            // Added transform scale/translate for interactive feedback
+            let classes = "py-3 px-6 rounded-full font-semibold shadow-lg transition duration-200 ease-in-out hover:scale-[1.02] active:scale-[0.98]";
+            
+            if (style === 'accent') {
+                classes += " bg-indigo-600 text-white hover:bg-indigo-700 hover:translate-y-[-2px] focus:outline-none focus:ring-4 focus:ring-indigo-300";
+            } else if (style === 'secondary') {
+                classes += " bg-white text-gray-700 border-2 border-gray-300 hover:bg-gray-100 hover:translate-y-[-2px] focus:outline-none focus:ring-4 focus:ring-gray-200";
+            } else if (style === 'tertiary') { // Used for back button
+                classes += " bg-transparent text-gray-500 hover:text-indigo-600 focus:outline-none focus:ring-0 shadow-none";
+            }
+            
+            button.className = classes;
+            buttonArea.appendChild(button);
+        }
+
+        function showTypingIndicator() {
+            const indicatorDiv = document.createElement('div');
+            indicatorDiv.id = 'typing-indicator';
+            indicatorDiv.className = 'chat-bubble typing-indicator flex space-x-1';
+            indicatorDiv.innerHTML = '<span>.</span><span>.</span><span>.</span>';
+            chatContent.appendChild(indicatorDiv);
+            chatContent.scrollTop = chatContent.scrollHeight;
+        }
+
+        function hideTypingIndicator() {
+            const indicator = document.getElementById('typing-indicator');
+            if (indicator) {
+                indicator.remove();
+            }
+        }
+
+        function botResponse(text, delay, callback) {
+            showTypingIndicator();
+            clearTimeout(currentTimeout); // Clear any existing timeout
+            currentTimeout = setTimeout(() => {
+                hideTypingIndicator();
+                addMessage(text);
+                if (callback) callback();
+            }, delay);
+        }
+        
+        function getNextIcebreaker(category, tone) {
+            const list = expandedIcebreakerData[category][tone];
+            let indices = usedIndices[category][tone];
+
+            if (indices.size >= list.length) {
+                indices.clear();
+                addMessage("I'm refreshing my memory bank... just a second!");
+            }
+
+            let randomIndex;
+            do {
+                randomIndex = Math.floor(Math.random() * list.length);
+            } while (indices.has(randomIndex)); 
+
+            indices.add(randomIndex); 
+            return list[randomIndex];
+        }
+        
+        function copyIcebreaker(text, buttonElement) {
+            // Use document.execCommand('copy') as navigator.clipboard might fail in certain iframe environments
+            const textArea = document.createElement('textarea');
+            textArea.value = text;
+            textArea.style.position = 'fixed'; // Prevents scrolling to bottom
+            document.body.appendChild(textArea);
+            textArea.focus();
+            textArea.select();
+            
+            try {
+                const successful = document.execCommand('copy');
+                if (successful) {
+                    buttonElement.textContent = '✅ Copied!';
+                    buttonElement.className = buttonElement.className.replace('bg-blue-500', 'bg-green-500');
+                    setTimeout(() => {
+                        buttonElement.textContent = 'Copy to Clipboard';
+                        buttonElement.className = buttonElement.className.replace('bg-green-500', 'bg-blue-500');
+                    }, 2000);
+                }
+            } catch (err) {
+                console.error('Copy failed:', err);
+                buttonElement.textContent = 'Copy Failed (See console)';
+            }
+            
+            document.body.removeChild(textArea);
+        }
+
+        // --- State/Flow Handlers ---
+
+        function clearScreen() {
+            chatContent.innerHTML = '';
+            clearButtons();
+            restartContainer.innerHTML = '';
+        }
+
+        function startChat(showGreeting = true) {
+            clearScreen();
+            chatWindow.classList.remove('swing-and-fade'); 
+            chatWindow.style.display = 'block';
+
+            if (showGreeting) {
+                addMessage("Hi there!");
+            }
+            botResponse("Do you want an ice breaker suggestion to open a conversation?", showGreeting ? 1000 : 100, () => {
+                state = 'start';
+                addButton("Yes, please!", selectGender, 'accent');
+                addButton("No, I'm good", endChat, 'secondary');
+            });
+        }
+
+        function selectGender() {
+            if (state === 'start') {
+                 addMessage("Yes, please!", true);
+            }
+            clearButtons();
+            
+            botResponse("Great! What type of person are you looking to start a conversation with? (Choose the category that best fits)", 1000, () => {
+                state = 'gender_select';
+                
+                addButton("Girl", () => selectTone('female', 'Girl'), 'accent');
+                addButton("Boy", () => selectTone('male', 'Boy'), 'accent');
+                addButton("Women", () => selectTone('female', 'Woman'), 'accent');
+                addButton("Men", () => selectTone('male', 'Man'), 'accent');
+
+                addButton("← Back to Start", () => startChat(false), 'tertiary');
+            });
+        }
+        
+        function selectTone(gender, genderLabel) {
+            // Only acknowledge the user selection if coming from gender_select
+            if (state === 'gender_select') {
+                addMessage(genderLabel, true);
+            }
+            lastContext = { gender, genderLabel }; // Save context for back button
+            clearButtons();
+
+            botResponse(`Got it. Now, what's the **tone** of the conversation you want to start with a ${genderLabel}?`, 1000, () => {
+                state = 'tone_select';
+                
+                addButton("Casual / Flirty", () => showIcebreaker(gender, genderLabel, 'casual'), 'accent');
+                addButton("Professional / Networking", () => showIcebreaker(gender, genderLabel, 'professional'), 'accent');
+                addButton("Deep / Thought-Provoking", () => showIcebreaker(gender, genderLabel, 'deep'), 'accent');
+                
+                addButton("← Back to Categories", selectGender, 'tertiary');
+            });
+        }
+
+        function showIcebreaker(gender, genderLabel, tone) {
+            const toneLabel = tone.charAt(0).toUpperCase() + tone.slice(1).replace('_', '/');
+            // Only acknowledge the user selection if coming from tone_select
+            if (state === 'tone_select') {
+                 addMessage(toneLabel, true);
+            }
+            clearButtons();
+            
+            lastContext = { gender, genderLabel, tone }; // Save full context
+            
+            const categoryLabel = gender === 'female' ? "Female/Feminine" : "Male/Masculine";
+            
+            botResponse(`Excellent choice! Here is a great **${toneLabel}** icebreaker for a ${categoryLabel} conversation partner:`, 1000, () => {
+                const icebreaker = getNextIcebreaker(gender, tone);
+                const messageDiv = addMessage(`"${icebreaker}"`);
+                
+                state = 'result';
+                
+                // Button for copying the text
+                const copyBtn = document.createElement('button');
+                copyBtn.textContent = 'Copy to Clipboard';
+                // Added hover/active classes for copy button as well
+                copyBtn.className = "py-2 px-4 text-sm rounded-full font-semibold shadow-md bg-blue-500 text-white transition duration-150 hover:bg-blue-600 hover:translate-y-[-1px] active:scale-[0.98] mt-2";
+                copyBtn.onclick = (e) => copyIcebreaker(icebreaker, e.target);
+                
+                // Append copy button directly below the message
+                messageDiv.appendChild(copyBtn);
+
+                // Re-add action buttons
+                addButton(`Another one for ${genderLabel} (${toneLabel})?`, () => showIcebreaker(gender, genderLabel, tone), 'accent');
+                addButton("Done chatting", endChat, 'secondary');
+                
+                // Add back button to tone select
+                addButton("← Back to Tones", () => selectTone(gender, genderLabel), 'tertiary');
+
+            });
+        }
+
+        function endChat() {
+            // Acknowledge user's final decision
+            if (state !== 'start') {
+                addMessage("Done chatting", true); 
+            } else {
+                 addMessage("No, I'm good", true); 
+            }
+            clearButtons();
+
+            botResponse("Bye bye! Meet you again soon.", 1000, () => {
+                state = 'end';
+                
+                // Apply the swing and fade animation
+                chatWindow.classList.add('swing-and-fade');
+                
+                // Wait for the animation to complete before showing the restart button
+                setTimeout(() => {
+                    chatWindow.style.display = 'none'; // Ensure it's hidden after animation
+                    
+                    // Create the restart button
+                    const restartButton = document.createElement('button');
+                    restartButton.textContent = "Hello? Are you there?";
+                    restartButton.onclick = () => {
+                        chatWindow.style.display = 'block'; 
+                        startChat(true); // Restart with greeting
+                    };
+                    // Use pink for prominence and a subtle pulse animation, added subtle hover effect
+                    restartButton.className = "py-3 px-6 rounded-full font-bold text-lg bg-pink-500 text-white shadow-xl transition duration-300 ease-in-out hover:bg-pink-600 hover:shadow-2xl hover:translate-y-[-2px] active:scale-[0.98] animate-pulse";
+                    
+                    restartContainer.innerHTML = '';
+                    restartContainer.appendChild(restartButton);
+
+                }, 1000); // 1 second delay matches the animation duration
+            });
+        }
+
+        // Initialize the app when the window loads
+        window.onload = startChat;
+
+    </script>
+</body>
+</html>
